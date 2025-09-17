@@ -10,6 +10,8 @@ const cors = require("cors");
 const helmet = require("helmet");
 const passport = require("passport");
 const session = require("express-session");
+const MongoStore=require("connect-mongo")
+
 
 
 
@@ -43,6 +45,7 @@ app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    store:MongoStore.create({mongoUrl:process.env.MONGO_URL})
 }));
 
 // Initialize Passport for authentication
@@ -74,3 +77,8 @@ const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`Server started running on port ${PORT}`);
 });
+
+app.get("/", (req, res) => {
+    res.send("BuyFlow backend is running 🚀");
+  });
+  
