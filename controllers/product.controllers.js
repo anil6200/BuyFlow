@@ -1,5 +1,6 @@
 require("dotenv").config();
 const productModel = require("../models/product.model");
+const Cloudinary = require('../config/cloudinary')
 const userModel = require("../models/user.model")
 const reviewModel = require("../models/review.model")
 const NodeCache = require("node-cache");
@@ -7,7 +8,7 @@ const myCache = new NodeCache({ stdTTL: 100, checkperiod: 120 });
 
 
 const numberWithCommas = (number) => {
-    return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 // add products 
 exports.addProduct = async (req, res) => {
@@ -18,7 +19,7 @@ exports.addProduct = async (req, res) => {
     if (!name || !description || !price || !category || !stock || !discount) {
       return res.status(400).json({ success: false, message: "Please fill in all product details" });
     }
-    
+
     // Sanitize and validate price
     // let sanitizedPrice = parseFloat(price.replace(/,/g, ''));
     let sanitizedPrice = parseFloat(String(price).replace(/,/g, ''));
@@ -26,7 +27,7 @@ exports.addProduct = async (req, res) => {
     if (isNaN(sanitizedPrice) || sanitizedPrice < 0) {
       return res.status(400).json({ success: false, message: "Price must be a valid number greater than or equal to 0" });
     }
-  
+
     // Sanitize and validate discount
     let numericDiscount = parseFloat(discount);
     if (isNaN(numericDiscount) || numericDiscount < 0 || numericDiscount > 100) {
@@ -40,10 +41,13 @@ exports.addProduct = async (req, res) => {
     }
 
     // Get Cloudinary image URLs
-    if(! req.files){
-      return res.status(400).json({ success: false, message: "please provide images"})
+    if (!req.files) {
+      return res.status(400).json({ success: false, message: "please provide images" })
     }
-    const images = req.files.map(file => file.path);
+    const images = req.files.map(file => ({
+      url: file.path,
+      public_id: file.filename
+    }));
 
     // Create a new product in the database
     const newProduct = await productModel.create({
@@ -82,7 +86,7 @@ exports.totalProducts = async (req, res, next) => {
     // Validate `page` and `limit` as positive integers
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
-    
+
     if (isNaN(pageNumber) || pageNumber < 1 || isNaN(limitNumber) || limitNumber < 1 || limitNumber > MAX_LIMIT) {
       return res.status(400).json({
         success: false,
@@ -404,83 +408,83 @@ exports.sortProducts = async (req, res, next) => {
 
 // fetch single product by id
 exports.singleProduct = async (req, res, next) => {
-    // Function to format numbers with commas
-    const numberWithCommas = (number) => {
-        return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  // Function to format numbers with commas
+  const numberWithCommas = (number) => {
+    return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  };
+
+  try {
+    // Extract product ID from request parameters or query
+    const productId = req.params.id || req.query.id;
+
+    // Fetch the product by ID
+    const product = await productModel.findById(productId).exec();
+
+    // Check if product was found
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    // Find similar products in the same category
+    let similarProducts = await productModel.find({
+      category: product.category,
+      _id: { $ne: productId } // Exclude the current product
+    }).limit(10).lean(); // Using .lean() to return plain JavaScript objects
+
+    let responseProducts = [];
+
+    // If similar products are found, set them as similarProducts
+    if (similarProducts.length > 0) {
+      responseProducts = similarProducts.map(item => ({
+        ...item,
+        price: numberWithCommas(item.price),
+        priceAfterDiscount: item.priceAfterDiscount ? numberWithCommas(item.priceAfterDiscount) : undefined
+      }));
+    } else {
+      // If no similar products are found, fetch random products
+      const moreProducts = await productModel.aggregate([
+        { $match: { _id: { $ne: productId } } }, // Exclude the current product
+        { $sample: { size: 20 } } // Get up to 20 random products
+      ]);
+
+      responseProducts = moreProducts.map(item => ({
+        ...item,
+        price: numberWithCommas(item.price),
+        priceAfterDiscount: item.priceAfterDiscount ? numberWithCommas(item.priceAfterDiscount) : undefined
+      }));
+    }
+
+    // Format the single product
+    const formattedProduct = {
+      ...product.toObject(),
+      price: numberWithCommas(product.price),
+      priceAfterDiscount: product.priceAfterDiscount ? numberWithCommas(product.priceAfterDiscount) : undefined
     };
 
-    try {
-        // Extract product ID from request parameters or query
-        const productId = req.params.id || req.query.id;
+    // Prepare the response JSON structure
+    const response = {
+      success: true,
+      product: formattedProduct,
+      similarProducts: similarProducts.length > 0 ? responseProducts : undefined,
+      moreProducts: similarProducts.length === 0 ? responseProducts : undefined
+    };
 
-        // Fetch the product by ID
-        const product = await productModel.findById(productId).exec();
+    // Send the response
+    res.status(200).json(response);
 
-        // Check if product was found
-        if (!product) {
-            return res.status(404).json({ success: false, message: "Product not found" });
-        }
-
-        // Find similar products in the same category
-        let similarProducts = await productModel.find({
-            category: product.category,
-            _id: { $ne: productId } // Exclude the current product
-        }).limit(10).lean(); // Using .lean() to return plain JavaScript objects
-
-        let responseProducts = [];
-
-        // If similar products are found, set them as similarProducts
-        if (similarProducts.length > 0) {
-            responseProducts = similarProducts.map(item => ({
-                ...item,
-                price: numberWithCommas(item.price),
-                priceAfterDiscount: item.priceAfterDiscount ? numberWithCommas(item.priceAfterDiscount) : undefined
-            }));
-        } else {
-            // If no similar products are found, fetch random products
-            const moreProducts = await productModel.aggregate([
-                { $match: { _id: { $ne: productId } } }, // Exclude the current product
-                { $sample: { size: 20 } } // Get up to 20 random products
-            ]);
-
-            responseProducts = moreProducts.map(item => ({
-                ...item,
-                price: numberWithCommas(item.price),
-                priceAfterDiscount: item.priceAfterDiscount ? numberWithCommas(item.priceAfterDiscount) : undefined
-            }));
-        }
-
-        // Format the single product
-        const formattedProduct = {
-            ...product.toObject(),
-            price: numberWithCommas(product.price),
-            priceAfterDiscount: product.priceAfterDiscount ? numberWithCommas(product.priceAfterDiscount) : undefined
-        };
-
-        // Prepare the response JSON structure
-        const response = {
-            success: true,
-            product: formattedProduct,
-            similarProducts: similarProducts.length > 0 ? responseProducts : undefined,
-            moreProducts: similarProducts.length === 0 ? responseProducts : undefined
-        };
-
-        // Send the response
-        res.status(200).json(response);
-
-    } catch (error) {
-        res.status(500).json({ success: false, message: "Internal Server Error" });
-    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 };
 
 
 // update single product with id checking mode.
 exports.updateProduct = async (req, res) => {
   try {
-    const { name, description, price, category, stock, discount} = req.body;
-    const productId =  req.query.productId;
+    const { name, description, price, category, stock, discount } = req.body;
+    const productId = req.query.productId;
 
-    if(! productId) return res.status(400).json({success: false, message : "Please provide ProductId for update the details"})
+    if (!productId) return res.status(400).json({ success: false, message: "Please provide ProductId for update the details" })
 
     // Validate required fields
     const requiredFields = { name, description, price, category, stock, discount };
@@ -494,7 +498,10 @@ exports.updateProduct = async (req, res) => {
     if (!req.files) {
       return res.status(400).json({ success: false, message: "Please provide images" });
     }
-    const images = req.files.map(file => file.path);
+    const images = req.files.map(file => ({
+      url: file.path,
+      public_id: file.filename
+    }));
 
     // Sanitize and validate price
     const sanitizedPrice = parseFloat(price.replace(/,/g, ''));
@@ -547,34 +554,35 @@ exports.updateProduct = async (req, res) => {
 
 // /deleteProduct form id
 exports.deleteProduct = async (req, res, next) => {
-    try {
-        // Extract product ID from request parameters in a more explicit way
-        const productId = req.query.id || req.body.id;
-        
-        // Validate if the product ID is provided
-        if (!productId) {
-            return res.status(400).json({ success: false, message: "Product ID is required" });
-        }
+  try {
+    // Extract product ID from request parameters in a more explicit way
+    const productId = req.query.id || req.body.id;
 
-        // Attempt to delete the product by ID
-        const deletedProduct = await productModel.findByIdAndDelete(productId);
-
-        // Check if the product was successfully deleted
-        if (!deletedProduct) {
-            return res.status(404).json({ success: false, message: "Product not found" });
-        }
-
-        // Send success response
-        res.status(200).json({
-            success: true,
-            message: "Product deleted successfully"
-        });
-
-    } catch (error) {
-        // Log the error for debugging purposes
-        console.error("Error deleting product:", error);
-        res.status(500).json({ success: false, message: "Internal Server Error" });
+    // Validate if the product ID is provided
+    if (!productId) {
+      return res.status(400).json({ success: false, message: "Product ID is required" });
     }
+
+    // Attempt to delete the product by ID
+    const deletedProduct = await productModel.findByIdAndDelete(productId);
+    if (deletedProduct && deletedProduct.images)
+
+      // Check if the product was successfully deleted
+      if (!deletedProduct) {
+        return res.status(404).json({ success: false, message: "Product not found" });
+      }
+
+    // Send success response
+    res.status(200).json({
+      success: true,
+      message: "Product deleted successfully"
+    });
+
+  } catch (error) {
+    // Log the error for debugging purposes
+    console.error("Error deleting product:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 };
 
 
@@ -582,15 +590,15 @@ exports.deleteProduct = async (req, res, next) => {
 exports.searchProducts = async (req, res, next) => {
   try {
     const { query } = req.query; // Retrieve the search query from the request
-    
+
     // Check if the query parameter is provided
     if (!query) {
       return res.status(400).json({ success: false, message: 'Query is required' });
     }
-    
+
     // Create a case-insensitive regex pattern for matching the query
     const regexPattern = new RegExp(query, 'i');
-    
+
     // Create a cache key based on the query
     const cacheKey = `search_${query}`;
 
@@ -608,7 +616,7 @@ exports.searchProducts = async (req, res, next) => {
         { description: { $regex: regexPattern } },
       ]
     }).lean(); // Use .lean() to return plain JavaScript objects for better performance
-    
+
     // Check if no products were found
     if (products.length === 0) {
       return res.status(404).json({ success: false, message: 'No products found' });
@@ -629,104 +637,126 @@ exports.searchProducts = async (req, res, next) => {
 
 
 // add reviews to rate the product by comment rating number.
-  exports.addReview = async (req, res) => {
-    try {
-      const { productId, rating, comment } = req.body;
-      const loginuser = await  userModel.findOne({email : req.user.email})
-        // Assuming you're using authentication
-       if(! loginuser){
-         return res.status(403).json({success : false, message : "Login user not found!"})
-       }
-      // Validate input fields
-      if (!productId || !rating || !comment) {
-        return res.status(400).json({ success: false, message: "All fields are required" });
-      }
-  
-      // Check if the product exists
-      const product = await productModel.findById(productId);
-      if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
-      }
-  
-      // Check if user already reviewed this product
-      const existingReview = await reviewModel.findOne({ user: loginuser._id, product: productId });
-      if (existingReview) {
-        return res.status(400).json({ success: false, message: "You have already reviewed this product" });
-      }
-  
-      // Create the new review
-      const review = await reviewModel.create({
-        user: loginuser._id,
-        product: productId,
-        rating,
-        comment
-      });
-  
-      // Update product's review stats (optional)
-      product.reviews.push(review._id);
-      await product.save();
-      await loginuser.save();
-  
-      // Send response
-      res.status(201).json({
-        success: true,
-        message: 'Review added successfully',
-        review
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, message: "Internal Server Error" });
+exports.addReview = async (req, res) => {
+  try {
+    const { productId, rating, comment } = req.body;
+    const loginuser = await userModel.findOne({ email: req.user.email })
+    // Assuming you're using authentication
+    if (!loginuser) {
+      return res.status(403).json({ success: false, message: "Login user not found!" })
     }
-  };
+    // Validate input fields
+    if (!productId || !rating || !comment) {
+      return res.status(400).json({ success: false, message: "All fields are required" });
+    }
+
+    // Check if the product exists
+    const product = await productModel.findById(productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    // Check if user already reviewed this product
+    const existingReview = await reviewModel.findOne({ user: loginuser._id, product: productId });
+    if (existingReview) {
+      return res.status(400).json({ success: false, message: "You have already reviewed this product" });
+    }
+
+    // Create the new review
+    const review = await reviewModel.create({
+      user: loginuser._id,
+      product: productId,
+      rating,
+      comment
+    });
+
+    // Update product's review stats (optional)
+    product.reviews.push(review._id);
+    await product.save();
+    await loginuser.save();
+
+    // Send response
+    res.status(201).json({
+      success: true,
+      message: 'Review added successfully',
+      review
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
 
 
 // reviews of the product by Id
-  exports.getProductReviews = async (req, res) => {
-    try {
-      const { productId } = req.params || req.query;
-  
-      // Check if the product exists
-      const product = await productModel.findById(productId);
-      if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
-      }
-  
-      // Create a cache key based on the product ID
-      const cacheKey = `reviews_${productId}`;
-  
-      // Check if reviews exist in the cache
-      const cachedReviews = myCache.get(cacheKey);
-      if (cachedReviews) {
-        return res.status(200).json(cachedReviews); // Return cached response
-      }
-  
-      // Find all reviews related to this product
-      const reviews = await reviewModel.find({ product: productId })
-        .populate('user', 'username profile') // Populating the user details (optional)
-        .sort({ createdAt: -1 }); // Sort by newest first (optional)
-  
-      if (reviews.length === 0) {
-        return res.status(404).json({ success: false, message: "No reviews found for this product" });
-      }
-  
-      // Prepare the response object
-      const response = {
-        success: true,
-        reviews,
-      };
-  
-      // Store the reviews in the cache
-      myCache.set(cacheKey, response);
-  
-      // Return the reviews
-      res.status(200).json(response);
-    } catch (error) {
-      res.status(500).json({ success: false, message: "Internal Server Error" });
+exports.getProductReviews = async (req, res) => {
+  try {
+    const { productId } = req.params || req.query;
+
+    // Check if the product exists
+    const product = await productModel.findById(productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
     }
+
+    // Create a cache key based on the product ID
+    const cacheKey = `reviews_${productId}`;
+
+    // Check if reviews exist in the cache
+    const cachedReviews = myCache.get(cacheKey);
+    if (cachedReviews) {
+      return res.status(200).json(cachedReviews); // Return cached response
+    }
+
+    // Find all reviews related to this product
+    const reviews = await reviewModel.find({ product: productId })
+      .populate('user', 'username profile') // Populating the user details (optional)
+      .sort({ createdAt: -1 }); // Sort by newest first (optional)
+
+    if (reviews.length === 0) {
+      return res.status(404).json({ success: false, message: "No reviews found for this product" });
+    }
+
+    // Prepare the response object
+    const response = {
+      success: true,
+      reviews,
+    };
+
+    // Store the reviews in the cache
+    myCache.set(cacheKey, response);
+
+    // Return the reviews
+    res.status(200).json(response);
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+exports.deleteImageFromCloudinary = async (req, res) => {
+  try {
+    const { public_id } = req.body;
+    if (!public_id) { return res.status(400).json({ success: false, message: "public_id is required" }) };
+    const result = await Cloudinary.uploader.destroy(public_id)
+    if (!result || result.result !== "ok") { return res.status(400).json({ success: false, message: "Image not found or image Already Deleted" })};
+    res.status(200).json({
+      success: true,
+      result: result,
+      message: "Image Delete successfull"
+    });
+
+  }catch(e){
+    res.status(500).json({
+      success: false,
+      message: e.message
+    })
   };
-  
+
+}
 
 
 
 
-  
-  
+
+
+
+

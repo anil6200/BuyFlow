@@ -37,7 +37,10 @@ const productSchema = new Schema({
         required: true,
         min: [0, 'Stock must be a non-negative number']
     },
-    images: [String],
+    images: [{
+        url:String,
+        public_id:String
+    }],
     discount: {
         type: Number,
         min: [0, 'Discount must be between 0 and 100'],

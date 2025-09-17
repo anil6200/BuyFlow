@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { totalProducts, singleProduct, updateProduct, deleteProduct, productByCategory, searchProducts, sortProducts,addReview, getProductReviews, addProduct } = require('../controllers/product.controllers');
+const { totalProducts, singleProduct, updateProduct, deleteProduct, deleteImageFromCloudinary,productByCategory, searchProducts, sortProducts,addReview, getProductReviews, addProduct } = require('../controllers/product.controllers');
 const { AdminIsLoggedIn, UserIsLoggedIn } = require('../middlewares/auth.middleware');
 const upload = require("../utils/multer");
 
@@ -22,6 +22,7 @@ router.put("/product/update", [AdminIsLoggedIn, upload.array('images', 5)],  upd
 // /product/delete/:id
 // tested
 router.delete("/product/delete",AdminIsLoggedIn, deleteProduct);
+router.delete('/deleteimage',AdminIsLoggedIn,deleteImageFromCloudinary)
 
 ///category
 // tested
