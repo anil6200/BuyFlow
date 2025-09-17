@@ -10,7 +10,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const passport = require("passport");
 const session = require("express-session");
-const MongoStore=require("connect-mongo")
+const MongoStore = require("connect-mongo")
 
 
 
@@ -30,6 +30,9 @@ require("./config/db.config").DbConnection();
 
 // Initialize Express app
 const app = express();
+app.get("/", (req, res) => {
+    res.send("BuyFlow backend is running ");
+});
 
 // Middleware setup
 app.use(cors()); // Enable CORS for API access
@@ -45,7 +48,7 @@ app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    store:MongoStore.create({mongoUrl:process.env.MONGO_URL})
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URL })
 }));
 
 // Initialize Passport for authentication
@@ -54,7 +57,7 @@ app.use(passport.session());
 
 
 // Set up route prefixes
-app.get("/Ecommerce",  (req, res) => {
+app.get("/Ecommerce", (req, res) => {
     res.send("Welcome to the API")
 })
 app.use(`/Ecommerce/users/user`, usersRoutes);
@@ -73,12 +76,9 @@ app.all('*', (req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 8080; 
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
     console.log(`Server started running on port ${PORT}`);
 });
 
-app.get("/", (req, res) => {
-    res.send("BuyFlow backend is running 🚀");
-  });
-  
+
