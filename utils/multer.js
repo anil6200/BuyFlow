@@ -10,7 +10,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Set up Cloudinary storage for Multer
+// Set up Cloudinary storage for Multer 
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
