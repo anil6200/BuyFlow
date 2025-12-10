@@ -9,6 +9,6 @@ exports.DbConnection = async(req, res, err) => {
         })
         .catch(function(error) {
             console.warn(error.message);
-        }); 
+        });
 
 }
