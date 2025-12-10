@@ -11,7 +11,7 @@ exports.sendToken = (user, res) => {
         sameSite: 'strict',
     });
 
-    return res.status(200).json({ success: true, user, token });
+    return res.status(200).json({ success: true, user, token }); 
 };
 
 
